@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=Cosmic Clipman
+Comment=Clipboard history for the COSMIC desktop
+Type=Application
+Icon=io.github.enzofagundz.CosmicClipman
+Exec=cosmic-clipman
+Terminal=false
+StartupNotify=true
+Categories=COSMIC
+Keywords=COSMIC;Clipboard;History;
+NoDisplay=true
+X-CosmicApplet=true
+X-CosmicHoverPopup=Auto
+MimeType=
