@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted.
+Superseded by [ADR-0009](0009-shortcut-installed-by-cli.md). The D-Bus toggle
+interface and the single code path remain; the shortcut is now installed by an
+explicit CLI mode instead of being left to the user.
 
 ## Context
 

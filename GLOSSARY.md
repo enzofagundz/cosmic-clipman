@@ -32,6 +32,22 @@ term means here, not what it means in general.
 - **Popup** — the window the applet opens under its panel button. Search field,
   grouped history list, actions and the incognito toggle live here.
 
+- **Paste** — putting a clip item back on the clipboard and injecting `Ctrl+V`
+  into the previously focused window. The popup closes first; the keystroke
+  waits for the clipboard write and the popup close event. See
+  `docs/adr/0003-paste-by-virtual-keyboard.md`.
+
+- **Copy-only** — putting a clip item back on the clipboard without injecting a
+  keystroke. The **Copy** action does this.
+
+- **Paste failure notification** — the desktop notification shown when the
+  compositor rejects the paste keystroke. It never contains clip content; the
+  clip stays on the clipboard for a manual `Ctrl+V`.
+
+- **Shortcut binding** — the entry in COSMIC's custom shortcut configuration
+  that runs `cosmic-clipman --toggle`. `Super+V` is the default; the explicit
+  install mode writes it. See `docs/adr/0009-shortcut-installed-by-cli.md`.
+
 - **Retention limit** — the maximum number of unpinned items kept; older
   unpinned items beyond it are pruned on insert. Fixed at 500 in v1. See
   `docs/adr/0004-rusqlite-fixed-defaults.md`.

@@ -25,6 +25,22 @@ Steps and their state. Updated as work lands.
 - [ ] Confirm a real paste into a focused window (human click in the popup);
       the protocol path itself is covered by the ignored live test.
 
+## V1.1 (0.2.0)
+
+- [x] Paste lifecycle: wait for the clipboard write and the popup close event,
+      inject once, with a safety deadline; the gate is unit-tested.
+- [x] Paste failure notification over the session bus, without clipboard
+      content.
+- [x] Shortcut install/uninstall CLI with conflict detection, idempotency and
+      integration tests against a temporary cosmic-config home.
+- [x] Install/uninstall recipes wire the shortcut; README, ADR, compatibility
+      and glossary updated.
+- [x] Native popup polish: padding, spacing, single-line previews, right-aligned
+      timestamps, two-row footer, empty and confirmation states.
+- [x] Version bumped to 0.2.0.
+- [ ] Confirm click-to-paste into a real focused editor on the live session and
+      record the result.
+
 ## Ground rules
 
 - Incremental: build and test after each step; review the diff between steps.

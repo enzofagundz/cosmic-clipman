@@ -10,9 +10,11 @@ differences are listed in [`docs/compatibility.md`](docs/compatibility.md).
 
 ## Status
 
-v1 is the text core: capture, deduplication, search, pin, delete, clear,
-retention, incognito, sensitive-clip detection, and paste by `Ctrl+V`. Images
-and snippets are phase 2; see `docs/plan.md`.
+v1.1 (0.2.0) is the text core plus the reliability and polish pass before
+phase 2: capture, deduplication, search, pin, delete, clear, retention,
+incognito, sensitive-clip detection, click-to-paste into the previously
+focused window, the `Super+V` shortcut installed by default, and the native
+popup layout. Images and snippets are phase 2; see `docs/plan.md`.
 
 ## Requirements
 
@@ -47,8 +49,17 @@ Then:
 
 1. Add the applet to the panel: COSMIC Settings → Desktop → Panel, or the
    panel's *Add applets* dialog, and pick **Cosmic Clipman**.
-2. Bind the shortcut: COSMIC Settings → Keyboard → Shortcuts → *Custom*,
-   command `cosmic-clipman --toggle`, key `Super+V`.
+
+The install also registers `Super+V` as a custom shortcut that runs
+`cosmic-clipman --toggle`. If you installed with `sudo`, the shortcut was
+skipped so root's configuration stays untouched; run this as your user:
+
+```sh
+cosmic-clipman --install-shortcut
+```
+
+Use `--shortcut "Super+Shift+V"` to pick another key. The command refuses to
+overwrite a key that already belongs to another command.
 
 The applet records as soon as the panel starts it. `cosmic-clipman --toggle`
 opens or closes the popup from anywhere; without a running applet it exits
@@ -69,6 +80,10 @@ non-zero with a message.
 Clicking a row pastes it. The **Copy** button only copies, without sending a
 keystroke. **Clear** removes unpinned items after a confirmation. **Incognito**
 pauses recording; the history and pasting keep working.
+
+When the compositor rejects the paste keystroke, the clip stays on the
+clipboard and a desktop notification asks you to press `Ctrl+V`. The
+notification never includes the clip text.
 
 Sensitive clips (labelled passwords, vendor tokens, private keys, JWTs,
 credential URLs, TOTP seeds, card numbers that pass Luhn) are shown masked and
@@ -93,7 +108,9 @@ PREFIX="$HOME/.local" just uninstall   # or: sudo just uninstall
 rm -r "${XDG_DATA_HOME:-$HOME/.local/share}/cosmic-clipman"
 ```
 
-Remove the shortcut in COSMIC Settings and the applet from the panel.
+`just uninstall` removes the `Super+V` binding before deleting the binary. If
+you installed by hand, remove the shortcut in COSMIC Settings and the applet
+from the panel.
 
 ## Tests
 
@@ -104,7 +121,8 @@ cargo fmt --all -- --check
 ```
 
 The corpus tests generate the original's sensitive-clip corpus at test time and
-need `python3`; no synthetic secret is committed.
+need `python3`; no synthetic secret is committed. The shortcut CLI tests use a
+temporary `XDG_CONFIG_HOME`, so they never touch your shortcuts.
 
 Tests that need the live session (clipboard and paste) are ignored by default:
 

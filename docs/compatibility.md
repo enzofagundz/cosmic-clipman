@@ -27,7 +27,8 @@ evidence is in `docs/tests.md`.
 | No shell execution | Yes | No subprocesses at all |
 | Event-driven capture | Yes | One 1 s tick, used only for the sensitive purge |
 | Only copies made while the applet runs are recorded | Yes | The watcher's first event (the pre-existing clipboard) is ignored |
-| Popup from a shortcut | Yes | `cosmic-clipman --toggle`; the user binds `Super+V` |
+| Popup from a shortcut | Yes | `cosmic-clipman --toggle`; `just install` registers `Super+V`. Terminals still need `Ctrl+Shift+V` for the paste itself |
+| Clicking a clip pastes it | Yes | The popup closes, focus returns, then `Ctrl+V` is injected |
 
 ## Changed
 
@@ -38,7 +39,7 @@ evidence is in `docs/tests.md`.
 | Extension types `Ctrl+V` via Clutter | Applet injects via `zwp_virtual_keyboard_manager_v1` with an uploaded US keymap | No shell in COSMIC (`docs/adr/0003-paste-by-virtual-keyboard.md`) |
 | Paste recipe `auto` picks `Ctrl+Shift+V` in terminals | Always `Ctrl+V` | Focus tracking inside the shell has no COSMIC equivalent; terminals need the manual recipe below |
 | Retention and privacy values in settings | Fixed 500 items, 30 s purge | No settings UI in v1 (`docs/adr/0004-rusqlite-fixed-defaults.md`) |
-| Shortcut installed by `install.sh` into gsettings | User creates it in COSMIC Settings | No supported way to register a global shortcut from an applet (`docs/adr/0006-popup-toggle-over-dbus.md`) |
+| Shortcut installed by `install.sh` into gsettings | `just install` runs `cosmic-clipman --install-shortcut` | COSMIC stores custom shortcuts in cosmic-config; the explicit CLI mode preserves the user's other entries and refuses conflicts |
 | Catppuccin themes, font size, opacity | Follows the COSMIC theme | Appearance settings are out of v1 scope |
 | Autostart through a systemd user service | Panel starts the applet | COSMIC applets are panel processes |
 | Backup and restore in settings | Not implemented | Out of v1 scope; the database is a plain SQLite file |

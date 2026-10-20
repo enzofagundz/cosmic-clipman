@@ -46,6 +46,8 @@ Send `Ctrl+V` unconditionally in v1. Do not attempt terminal detection.
 - A US keymap is compiled at injection time; libxkbcommon is already a
   dependency of the desktop, and the compilation is unit-tested to put `v` on
   keycode 55.
+- Paste failures keep the clip on the clipboard and notify the user; see
+  [ADR-0010](0010-paste-failure-notification.md).
 - Terminals stay a known difference from the original and are recorded in
   `docs/compatibility.md`, with the two mechanisms that could lift the
   limitation (toplevel-info focus tracking, or a manual alternate recipe).
