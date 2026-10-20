@@ -5,7 +5,13 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::Local;
 use cosmic::iced::platform_specific::shell::wayland::commands::popup::{destroy_popup, get_popup};
-use cosmic::iced::{Limits, Subscription, futures, window::Id};
+use cosmic::iced::{
+    Alignment, Length, Limits, Subscription,
+    core::text::EllipsizeHeightLimit,
+    futures,
+    widget::text::{Ellipsize, Wrapping},
+    window::Id,
+};
 use cosmic::prelude::*;
 use cosmic::widget;
 use futures::{SinkExt, StreamExt};
@@ -14,14 +20,17 @@ use crate::dbus::{self, IpcRequest};
 use crate::domain::{self, Item, RETENTION_LIMIT, SENSITIVE_TIMEOUT_SECS};
 use crate::fl;
 use crate::inject;
+use crate::notify;
+use crate::paste::{self, Decision};
 use crate::sensitive;
 use crate::store::Store;
 use crate::watcher::{self, ClipEvent, Shared};
 
 const POPUP_MAX_HEIGHT: f32 = 640.0;
 const POPUP_LIST_HEIGHT: f32 = 380.0;
-const POPUP_MIN_WIDTH: f32 = 380.0;
-const PASTE_DELAY: Duration = Duration::from_millis(160);
+const POPUP_MIN_WIDTH: f32 = 360.0;
+const PASTE_DEADLINE: Duration = Duration::from_millis(600);
+const PASTE_GRACE: Duration = Duration::from_millis(60);
 
 pub struct App {
     core: cosmic::Core,
@@ -33,6 +42,8 @@ pub struct App {
     selected: usize,
     incognito: bool,
     shared: Arc<Shared>,
+    paste: paste::Gate,
+    paste_popup: Option<Id>,
     status: Option<String>,
     confirm_clear: bool,
 }
@@ -48,6 +59,12 @@ pub enum Message {
     Ipc(IpcRequest),
     Activate(Option<i64>),
     Copy(Option<i64>),
+    ClipboardWritten {
+        epoch: Option<u64>,
+        result: Result<(), String>,
+    },
+    WindowClosed(Id),
+    PasteDeadline(u64),
     TogglePin(Option<i64>),
     Delete(Option<i64>),
     ClearRequest,
@@ -55,6 +72,7 @@ pub enum Message {
     ClearCancel,
     Incognito(bool),
     PasteResult(Result<(), String>),
+    PasteFailureNotified,
     Tick,
 }
 
@@ -138,6 +156,11 @@ impl App {
         }
     }
 
+    fn cancel_paste(&mut self) {
+        self.paste.disarm();
+        self.paste_popup = None;
+    }
+
     fn toggle_popup(&mut self) -> Task<cosmic::Action<Message>> {
         if self.popup.is_some() {
             self.close_popup()
@@ -164,17 +187,42 @@ impl App {
         }
         self.shared.arm_self_copy(Instant::now());
         self.reload();
-        cosmic::task::future(async move {
-            let result = tokio::task::spawn_blocking(move || {
-                watcher::set_text(&item.text)?;
-                if then_paste {
-                    std::thread::sleep(PASTE_DELAY);
-                    inject::press_ctrl_v().map_err(|err| err.to_string())?;
-                }
-                Ok::<(), String>(())
-            })
-            .await
-            .unwrap_or_else(|err| Err(format!("paste worker failed: {err}")));
+
+        let epoch = then_paste.then(|| {
+            self.paste_popup = self.popup;
+            self.paste.arm()
+        });
+        let write = cosmic::task::future(async move {
+            let result = tokio::task::spawn_blocking(move || watcher::set_text(&item.text))
+                .await
+                .unwrap_or_else(|err| Err(format!("clipboard worker failed: {err}")));
+            Message::ClipboardWritten { epoch, result }
+        });
+
+        if then_paste {
+            let deadline = epoch.expect("armed a paste");
+            Task::batch(vec![
+                self.close_popup(),
+                write,
+                cosmic::task::future(async move {
+                    tokio::time::sleep(PASTE_DEADLINE).await;
+                    Message::PasteDeadline(deadline)
+                }),
+            ])
+        } else {
+            write
+        }
+    }
+
+    fn inject_task(&mut self) -> Task<cosmic::Action<Message>> {
+        self.paste_popup = None;
+        cosmic::task::future(async {
+            tokio::time::sleep(PASTE_GRACE).await;
+            let result = match tokio::task::spawn_blocking(inject::press_ctrl_v).await {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(format!("paste worker failed: {err}")),
+            };
             Message::PasteResult(result)
         })
     }
@@ -222,7 +270,10 @@ impl App {
             return Task::none();
         };
         match key {
-            Key::Named(Named::Escape) => self.close_popup(),
+            Key::Named(Named::Escape) => {
+                self.cancel_paste();
+                self.close_popup()
+            }
             Key::Named(Named::ArrowDown) => {
                 self.move_selection(1);
                 Task::none()
@@ -297,6 +348,8 @@ impl cosmic::Application for App {
             selected: 0,
             incognito: false,
             shared: Arc::new(Shared::default()),
+            paste: paste::Gate::new(),
+            paste_popup: None,
             status,
             confirm_clear: false,
         };
@@ -326,20 +379,32 @@ impl cosmic::Application for App {
             } else {
                 fl!("no-results")
             };
-            list = list.add(widget::text::body(message));
+            list = list.add(
+                widget::container(widget::text::body(message))
+                    .center_x(Length::Fill)
+                    .center_y(Length::Fixed(POPUP_LIST_HEIGHT)),
+            );
         } else {
             let mut last_group: Option<domain::Group> = None;
             for (group, rows) in domain::grouped(&visible, Local::now()) {
                 if last_group != Some(group) {
-                    list = list.add(widget::text::heading(group.label()));
+                    list = list.add(
+                        widget::container(widget::text::heading(group.label()))
+                            .padding([8.0, 0.0, 2.0, 0.0]),
+                    );
                     last_group = Some(group);
                 }
                 for item in rows {
+                    let preview = widget::text::body(item.preview())
+                        .width(Length::Fill)
+                        .wrapping(Wrapping::None)
+                        .ellipsize(Ellipsize::End(EllipsizeHeightLimit::Lines(1)));
                     let row = widget::row(vec![
-                        widget::text::body(item.preview()).into(),
+                        preview.into(),
                         widget::text::caption(Self::row_meta(item)).into(),
                     ])
-                    .spacing(8);
+                    .spacing(8)
+                    .align_y(Alignment::Center);
                     list = list.add(
                         widget::list::button(row)
                             .on_press(Message::Activate(Some(item.id)))
@@ -353,69 +418,77 @@ impl cosmic::Application for App {
             widget::text_input::search_input(fl!("search-placeholder"), &self.query)
                 .id(self.search_id.clone())
                 .on_input(Message::Query)
+                .width(Length::Fill)
                 .into(),
         ])
-        .spacing(8);
+        .spacing(12);
 
         if let Some(status) = &self.status {
-            content = content.push(widget::text::caption(status.clone()));
+            content = content.push(widget::text::caption(status.clone()).width(Length::Fill));
         }
 
         if self.confirm_clear {
-            content = content.push(widget::text::body(fl!("clear-confirm")));
-            content = content.push(widget::text::caption(fl!("clear-confirm-body")));
             content = content.push(
-                widget::row(vec![
-                    widget::button::destructive(fl!("clear"))
-                        .on_press(Message::ClearConfirm)
-                        .into(),
-                    widget::button::standard(fl!("cancel"))
-                        .on_press(Message::ClearCancel)
-                        .into(),
+                widget::column(vec![
+                    widget::text::body(fl!("clear-confirm")).into(),
+                    widget::text::caption(fl!("clear-confirm-body")).into(),
+                    widget::row(vec![
+                        widget::button::destructive(fl!("clear"))
+                            .on_press(Message::ClearConfirm)
+                            .into(),
+                        widget::button::standard(fl!("cancel"))
+                            .on_press(Message::ClearCancel)
+                            .into(),
+                    ])
+                    .spacing(8)
+                    .into(),
                 ])
-                .spacing(8),
+                .spacing(6),
             );
         }
 
         content = content
             .push(widget::scrollable(list).height(cosmic::iced::Length::Fixed(POPUP_LIST_HEIGHT)));
 
-        let mut footer_items: Vec<Element<'_, Message>> = Vec::new();
+        let mut actions: Vec<Element<'_, Message>> = Vec::new();
         if let Some(id) = selected_id {
             let pinned = self.item(id).is_some_and(|item| item.pinned);
-            footer_items.push(
+            actions.push(
                 widget::button::standard(if pinned { fl!("unpin") } else { fl!("pin") })
                     .on_press(Message::TogglePin(Some(id)))
                     .into(),
             );
-            footer_items.push(
+            actions.push(
                 widget::button::standard(fl!("copy"))
                     .on_press(Message::Copy(Some(id)))
                     .into(),
             );
-            footer_items.push(
+            actions.push(
                 widget::button::standard(fl!("delete"))
                     .on_press(Message::Delete(Some(id)))
                     .into(),
             );
         }
-        footer_items.push(widget::text::body(fl!("incognito")).into());
-        footer_items.push(
-            widget::toggler(self.incognito)
-                .on_toggle(Message::Incognito)
-                .into(),
-        );
-        footer_items.push(
-            widget::button::destructive(fl!("clear"))
-                .on_press(Message::ClearRequest)
-                .into(),
-        );
+        if !actions.is_empty() {
+            content = content.push(widget::row(actions).spacing(8));
+        }
+
         content = content.push(
-            widget::row(footer_items)
-                .spacing(12)
-                .align_y(cosmic::iced::Alignment::Center),
+            widget::row(vec![
+                widget::text::body(fl!("incognito")).into(),
+                widget::toggler(self.incognito)
+                    .on_toggle(Message::Incognito)
+                    .into(),
+                widget::Space::new().width(Length::Fill).into(),
+                widget::button::destructive(fl!("clear"))
+                    .on_press(Message::ClearRequest)
+                    .into(),
+            ])
+            .spacing(8)
+            .align_y(Alignment::Center),
         );
 
+        let content = content.padding(16);
         self.core.applet.popup_container(content).into()
     }
 
@@ -424,12 +497,18 @@ impl cosmic::Application for App {
             service_subscription(self.shared.clone()),
             cosmic::iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick),
             cosmic::iced::keyboard::listen().map(Message::Key),
+            cosmic::iced::window::close_events().map(Message::WindowClosed),
         ])
     }
 
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
-            Message::TogglePopup => return self.toggle_popup(),
+            Message::TogglePopup | Message::Ipc(IpcRequest::Toggle) => {
+                if self.popup.is_some() || self.paste.is_pending() {
+                    self.cancel_paste();
+                }
+                return self.toggle_popup();
+            }
             Message::PopupClosed(id) => {
                 if self.popup == Some(id) {
                     self.popup = None;
@@ -458,14 +537,47 @@ impl cosmic::Application for App {
                 self.selected = 0;
             }
             Message::Key(event) => return self.handle_key(event),
-            Message::Ipc(IpcRequest::Toggle) => return self.toggle_popup(),
-            Message::Ipc(IpcRequest::Show) => return self.show_popup(),
-            Message::Ipc(IpcRequest::Hide) => return self.close_popup(),
-            Message::Activate(Some(id)) => {
-                let task = self.copy_task(id, true);
-                return Task::batch(vec![self.close_popup(), task]);
+            Message::Ipc(IpcRequest::Show) => {
+                self.cancel_paste();
+                return self.show_popup();
             }
+            Message::Ipc(IpcRequest::Hide) => {
+                self.cancel_paste();
+                return self.close_popup();
+            }
+            Message::Activate(Some(id)) => return self.copy_task(id, true),
             Message::Copy(Some(id)) => return self.copy_task(id, false),
+            Message::ClipboardWritten { epoch, result } => match result {
+                Ok(()) => {
+                    if let Some(epoch) = epoch
+                        && self.paste.clipboard_ready(epoch) == Decision::Inject
+                    {
+                        return self.inject_task();
+                    }
+                }
+                Err(err) => {
+                    self.status = Some(err);
+                    if epoch.is_some() {
+                        self.cancel_paste();
+                    }
+                }
+            },
+            Message::WindowClosed(id) => {
+                if self.popup == Some(id) {
+                    self.popup = None;
+                }
+                if self.paste_popup == Some(id) {
+                    self.paste_popup = None;
+                    if self.paste.popup_closed() == Decision::Inject {
+                        return self.inject_task();
+                    }
+                }
+            }
+            Message::PasteDeadline(epoch) => {
+                if self.paste.deadline(epoch) == Decision::Inject {
+                    return self.inject_task();
+                }
+            }
             Message::Activate(None) | Message::Copy(None) => {}
             Message::TogglePin(Some(id)) => self.toggle_pin(id),
             Message::TogglePin(None) => {}
@@ -486,8 +598,17 @@ impl cosmic::Application for App {
                 self.incognito = on;
                 self.shared.set_incognito(on);
             }
-            Message::PasteResult(Err(err)) => self.status = Some(err),
+            Message::PasteResult(Err(err)) => {
+                self.status = Some(err);
+                self.paste.failure();
+                self.paste_popup = None;
+                return cosmic::task::future(async {
+                    let _ = notify::paste_failed().await;
+                    Message::PasteFailureNotified
+                });
+            }
             Message::PasteResult(Ok(())) => self.status = None,
+            Message::PasteFailureNotified => {}
             Message::Tick => self.purge_sensitive(),
         }
         Task::none()
