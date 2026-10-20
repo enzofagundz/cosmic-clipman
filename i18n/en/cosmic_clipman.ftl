@@ -24,3 +24,5 @@ yesterday = Yesterday
 earlier-this-week = Earlier this week
 older = Older
 capture-failed = Clipboard capture stopped: { $error }
+paste-failed-summary = Could not paste
+paste-failed-body = The clip is on the clipboard. Press Ctrl+V to paste it.
