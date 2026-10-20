@@ -30,7 +30,7 @@ const POPUP_MAX_HEIGHT: f32 = 640.0;
 const POPUP_LIST_HEIGHT: f32 = 380.0;
 const POPUP_MIN_WIDTH: f32 = 360.0;
 const PASTE_DEADLINE: Duration = Duration::from_millis(600);
-const PASTE_GRACE: Duration = Duration::from_millis(60);
+const PASTE_GRACE: Duration = Duration::from_millis(400);
 
 pub struct App {
     core: cosmic::Core,
@@ -63,7 +63,6 @@ pub enum Message {
         epoch: Option<u64>,
         result: Result<(), String>,
     },
-    WindowClosed(Id),
     PasteDeadline(u64),
     TogglePin(Option<i64>),
     Delete(Option<i64>),
@@ -159,6 +158,21 @@ impl App {
     fn cancel_paste(&mut self) {
         self.paste.disarm();
         self.paste_popup = None;
+    }
+
+    /// Handle the popup's close request and inject once a pending paste is
+    /// ready.
+    fn popup_closed(&mut self, id: Id) -> Task<cosmic::Action<Message>> {
+        if self.popup == Some(id) {
+            self.popup = None;
+        }
+        if self.paste_popup == Some(id) {
+            self.paste_popup = None;
+            if self.paste.popup_closed() == Decision::Inject {
+                return self.inject_task();
+            }
+        }
+        Task::none()
     }
 
     fn toggle_popup(&mut self) -> Task<cosmic::Action<Message>> {
@@ -497,7 +511,6 @@ impl cosmic::Application for App {
             service_subscription(self.shared.clone()),
             cosmic::iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick),
             cosmic::iced::keyboard::listen().map(Message::Key),
-            cosmic::iced::window::close_events().map(Message::WindowClosed),
         ])
     }
 
@@ -509,11 +522,7 @@ impl cosmic::Application for App {
                 }
                 return self.toggle_popup();
             }
-            Message::PopupClosed(id) => {
-                if self.popup == Some(id) {
-                    self.popup = None;
-                }
-            }
+            Message::PopupClosed(id) => return self.popup_closed(id),
             Message::Capturing(owned) => {
                 if !owned {
                     self.status = Some("another applet instance is recording".into());
@@ -562,17 +571,6 @@ impl cosmic::Application for App {
                     }
                 }
             },
-            Message::WindowClosed(id) => {
-                if self.popup == Some(id) {
-                    self.popup = None;
-                }
-                if self.paste_popup == Some(id) {
-                    self.paste_popup = None;
-                    if self.paste.popup_closed() == Decision::Inject {
-                        return self.inject_task();
-                    }
-                }
-            }
             Message::PasteDeadline(epoch) => {
                 if self.paste.deadline(epoch) == Decision::Inject {
                     return self.inject_task();

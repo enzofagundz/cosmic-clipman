@@ -47,7 +47,9 @@ COSMIC session:
 - `clipboard_write_reaches_the_watcher` — pass: a `copy::Options` write is
   observed by the watcher thread and delivered as a text event.
 - `ctrl_v_injection_does_not_error` — pass: the compositor accepts the
-  virtual-keyboard device, the uploaded keymap and the `Ctrl+V` pair.
+  virtual-keyboard device, the uploaded keymap and the `Ctrl+V` pair. A manual
+  companion run with a text editor focused pasted a known clipboard value into
+  its buffer; the previous XKB keycode (55) did not.
 
 ## In the running session
 
@@ -66,7 +68,8 @@ COSMIC session:
 | Shortcut install CLI | ran the binary against a temporary `XDG_CONFIG_HOME` | created one `Spawn("cosmic-clipman --toggle")`; conflict refused; uninstall removed only that entry |
 | Installed shortcut config | ran `cosmic-clipman --install-shortcut` in the live session | wrote `Super+V` and preserved the existing `Print` and `Super+Shift+S` entries |
 | Popup layout | opened the installed applet with `--toggle` in the panel | padding, right-aligned timestamps, single-line previews and the two-row footer render inside the popup |
-| Clicking a row pastes | manual, with the popup open | **pending** — requires a human click; the paste path now waits for the popup close event |
+| Product `Ctrl+V` into a focused editor | ran the ignored live test with an editor focused, then read its buffer | pass: the clipboard value appeared in the buffer |
+| Clicking a row pastes | manual, 10 clicks with the popup open | pass: 10/10 with a 300 ms focus grace; the final build uses 400 ms |
 | Super+V after install | manual, on the live session | **pending** — config is written; requires a human key press |
 | Paste failure notification | manual, forcing an injection failure | **pending** — requires a live notification check |
 
@@ -76,9 +79,23 @@ COSMIC session:
   compositor rejected `modifiers` with the `no_keymap` protocol error: the
   Smithay revision cosmic-comp 1.10 ships (`e3d461a`) only accepts `xkb_v1`
   keymaps and ignores the rest, so `has_keymap` stayed false. The injector now
-  compiles a US keymap with libxkbcommon, uploads it, and derives the V keycode
-  from it.
+  compiles a US keymap with libxkbcommon and uploads it; the key requests use
+  the evdev V keycode (47).
 - The watcher initially skipped the first `Changed` event to avoid recording the
   clipboard present at startup. When the clipboard was empty at startup the
   first event was `Cleared` instead, and the next real copy was skipped. It now
   ignores exactly the first event of either kind.
+- The injector sent XKB keycodes (V = 55), but cosmic-comp's Smithay forwards
+  `zwp_virtual_keyboard_v1.key` to the focused client unchanged, and
+  `wl_keyboard.key` carries evdev keycodes. The client received `Ctrl` +
+  `KP_Multiply`, so nothing pasted. The injector now sends evdev 47, and the
+  unit test pins that convention.
+- The paste gate waited for `window::close_events()`, but a Wayland popup's
+  close arrives through libcosmic's `on_close_requested` (`SurfaceClosed`), not
+  as a window `Closed` event. The gate now handles `PopupClosed`; the 600 ms
+  deadline stays as a fallback.
+- After the keycode and close-event fixes, click-to-paste still failed about
+  half the time. The temporary log showed the injection firing 60 ms after the
+  close, while COSMIC took 117–311 ms to return keyboard focus to the editor;
+  keystrokes sent before that are dropped. A 10-click run with a 300 ms grace
+  pasted 10/10, and the final build waits 400 ms for margin.

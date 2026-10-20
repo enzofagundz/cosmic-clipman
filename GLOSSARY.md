@@ -34,8 +34,9 @@ term means here, not what it means in general.
 
 - **Paste** — putting a clip item back on the clipboard and injecting `Ctrl+V`
   into the previously focused window. The popup closes first; the keystroke
-  waits for the clipboard write and the popup close event. See
-  `docs/adr/0003-paste-by-virtual-keyboard.md`.
+  waits for the clipboard write, the popup close event, and a focus-return
+  grace (400 ms) so the compositor can hand keyboard focus back to the target.
+  See `docs/adr/0003-paste-by-virtual-keyboard.md`.
 
 - **Copy-only** — putting a clip item back on the clipboard without injecting a
   keystroke. The **Copy** action does this.
@@ -62,7 +63,9 @@ term means here, not what it means in general.
 
 - **Injected keymap** — the US XKB keymap compiled with libxkbcommon at paste
   time and uploaded to the compositor with the virtual keyboard, because
-  cosmic-comp 1.10 rejects the protocol's `no_keymap` form. See
+  cosmic-comp 1.10 rejects the protocol's `no_keymap` form. The key requests
+  that follow use **evdev** keycodes (V is 47), not XKB keycodes, because the
+  compositor forwards them unchanged to the focused client. See
   `docs/adr/0003-paste-by-virtual-keyboard.md`.
 
 - **Toggle** — `cosmic-clipman --toggle`, the CLI mode that asks the running

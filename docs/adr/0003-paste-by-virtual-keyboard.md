@@ -29,10 +29,12 @@ modifier is never left held.
 cosmic-comp 1.10's Smithay revision (`e3d461a`) only accepts `xkb_v1` keymaps:
 a `no_keymap` request is ignored and the following `modifiers` request is
 rejected with the protocol's `no_keymap` error. So compile a US keymap with
-libxkbcommon, upload it, and take the V keycode from it. The compositor applies
-it to the focused client for the injected keystroke and restores the user's
-keymap afterwards, which also makes the keystroke independent of the user's
-layout.
+libxkbcommon and upload it. The compositor uses that keymap for modifier state,
+but forwards the `key` argument to the focused client unchanged as a
+`wl_keyboard.key`, which carries an **evdev** keycode. Send evdev keycode 47 for
+V, not the XKB keycode 55; sending the XKB number produces a different key in
+the focused client and Ctrl+V never arrives. The uploaded keymap keeps the
+keystroke independent of the user's layout.
 
 Send `Ctrl+V` unconditionally in v1. Do not attempt terminal detection.
 
@@ -45,9 +47,12 @@ Send `Ctrl+V` unconditionally in v1. Do not attempt terminal detection.
 - Nothing works from a sandbox: Flatpak packaging stays out (ADR 8).
 - A US keymap is compiled at injection time; libxkbcommon is already a
   dependency of the desktop, and the compilation is unit-tested to put `v` on
-  keycode 55.
+  XKB keycode 55, which is evdev keycode 47 plus XKB's offset of 8.
 - Paste failures keep the clip on the clipboard and notify the user; see
   [ADR-0010](0010-paste-failure-notification.md).
+- The focus-return grace is a timing constant, not a compositor signal. If a
+  future cosmic-comp returns focus faster, the grace can be shortened; injecting
+  too early drops the keystroke silently rather than failing the injection.
 - Terminals stay a known difference from the original and are recorded in
   `docs/compatibility.md`, with the two mechanisms that could lift the
   limitation (toplevel-info focus tracking, or a manual alternate recipe).

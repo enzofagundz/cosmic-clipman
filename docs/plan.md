@@ -38,8 +38,10 @@ Steps and their state. Updated as work lands.
 - [x] Native popup polish: padding, spacing, single-line previews, right-aligned
       timestamps, two-row footer, empty and confirmation states.
 - [x] Version bumped to 0.2.0.
-- [ ] Confirm click-to-paste into a real focused editor on the live session and
-      record the result.
+- [x] Paste fix: send the evdev V keycode (47), feed the popup close request
+      to the pending-paste gate, and wait 400 ms for focus to return.
+- [x] Confirm click-to-paste into a real focused editor on the live session:
+      10/10 with a 300 ms grace; the final build uses 400 ms.
 
 ## Ground rules
 

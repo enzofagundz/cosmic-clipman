@@ -8,9 +8,10 @@
 //!
 //! cosmic-comp 1.10 only accepts a real XKB keymap (its Smithay revision
 //! refuses the `no_keymap` form with a `no_keymap` protocol error), so a US
-//! keymap is compiled with libxkbcommon and uploaded; the compositor applies it
-//! to the focused client for the injected keystroke and restores the system
-//! keymap afterwards. Keycodes are XKB keycodes of that uploaded keymap.
+//! keymap is compiled with libxkbcommon and uploaded. The compositor uses it
+//! for modifier state, then forwards the key number to the focused client
+//! unchanged as a `wl_keyboard.key`, which carries an evdev keycode. The key
+//! constants below are therefore evdev keycodes, not XKB keycodes.
 
 use std::io::Write;
 use std::os::fd::AsFd;
@@ -27,8 +28,10 @@ use xkbcommon::xkb;
 
 /// XKB modifier mask bit for Control.
 pub const MOD_CONTROL: u32 = 1 << 2;
-/// XKB keycode of the physical V key in the uploaded US keymap (evdev 47 + 8).
-pub const KEY_V: u32 = 55;
+/// XKB keycodes are evdev keycodes shifted by this offset.
+pub const XKB_KEYCODE_OFFSET: u32 = 8;
+/// Evdev keycode of the physical V key; `wl_keyboard.key` carries evdev keycodes.
+pub const KEY_V: u32 = 47;
 
 struct State;
 
@@ -187,7 +190,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_uploaded_keymap_puts_v_on_55() {
+    fn the_injected_key_is_the_evdev_v_key() {
+        // The compositor forwards `zwp_virtual_keyboard_v1.key` to the focused
+        // client unchanged, and `wl_keyboard.key` carries evdev keycodes. The
+        // uploaded US keymap assigns `v` to that keycode plus XKB's offset.
+        assert_eq!(KEY_V, 47);
         let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
         let keymap = xkb::Keymap::new_from_names(
             &context,
@@ -201,7 +208,10 @@ mod tests {
         .expect("libxkbcommon compiles a US keymap");
         let state = xkb::State::new(&keymap);
         let v = xkb::keysym_from_name("v", xkb::KEYSYM_NO_FLAGS);
-        assert_eq!(state.key_get_one_sym(xkb::Keycode::new(KEY_V)), v);
+        assert_eq!(
+            state.key_get_one_sym(xkb::Keycode::new(KEY_V + XKB_KEYCODE_OFFSET)),
+            v
+        );
         // XKB modifier masks: shift 1, lock 2, control 4.
         assert_eq!(MOD_CONTROL, 4);
         assert!(us_keymap().expect("keymap file").size > 0);

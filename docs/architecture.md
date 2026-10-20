@@ -61,13 +61,14 @@ shell-extension-plus-daemon split (see `docs/adr/0001-single-applet-process.md`)
    conditions: the clipboard write finished and the popup window reported
    closed. A safety deadline supplies the close condition if the event is
    missing, and a new activation replaces the pending one.
-4. When both conditions hold, the injector compiles a US keymap with
+4. When both conditions hold, the applet waits a 400 ms focus-return grace
+   (cosmic-comp 1.10 took 117–311 ms to return keyboard focus to the target in
+   live measurements), then the injector compiles a US keymap with
    libxkbcommon, opens its own Wayland connection, binds the virtual-keyboard
    manager, uploads that keymap (cosmic-comp 1.10 accepts only `xkb_v1`, not
-   `no_keymap`), presses Ctrl (mask 4) and the V keycode of that keymap,
-   releases both, and destroys the device. The compositor applies the keymap to
-   the focused client for the keystroke and restores the user's keymap
-   afterwards.
+   `no_keymap`), presses Ctrl (XKB mask 4) and the evdev V keycode (47),
+   releases both, and destroys the device. The keymap supplies modifier state;
+   the compositor forwards the evdev key number to the focused client.
 5. An injection failure leaves the clip on the clipboard and sends a desktop
    notification through `org.freedesktop.Notifications`; it never includes clip
    content. A terminal that ignores `Ctrl+V` is not detectable.
