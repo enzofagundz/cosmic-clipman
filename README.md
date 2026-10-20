@@ -103,6 +103,9 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --all -- --check
 ```
 
+The corpus tests generate the original's sensitive-clip corpus at test time and
+need `python3`; no synthetic secret is committed.
+
 Tests that need the live session (clipboard and paste) are ignored by default:
 
 ```sh
