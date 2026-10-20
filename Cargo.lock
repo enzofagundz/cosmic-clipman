@@ -917,7 +917,7 @@ dependencies = [
 
 [[package]]
 name = "cosmic-clipman"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -926,8 +926,10 @@ dependencies = [
  "i18n-embed-fl",
  "libcosmic",
  "regex",
+ "ron",
  "rusqlite",
  "rust-embed",
+ "serde",
  "serde_json",
  "sha2",
  "tempfile",

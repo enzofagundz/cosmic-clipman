@@ -51,7 +51,13 @@ install:
     install -Dm0644 {{ 'target' / 'xdgen' / 'app.desktop' }} {{desktop-dst}}
     install -Dm0644 {{ 'target' / 'xdgen' / 'app.metainfo.xml' }} {{appdata-dst}}
     install -Dm0644 resources/icon.svg {{icon-dst}}
+    @if [ "$(id -u)" -eq 0 ]; then \
+        echo "cosmic-clipman: run '{{bin-dst}} --install-shortcut' as your user to add Super+V"; \
+    else \
+        {{bin-dst}} --install-shortcut; \
+    fi
 
 # Uninstalls installed files
 uninstall:
+    @if [ -x {{bin-dst}} ]; then {{bin-dst}} --uninstall-shortcut; fi
     rm {{bin-dst}} {{desktop-dst}} {{icon-dst}}
